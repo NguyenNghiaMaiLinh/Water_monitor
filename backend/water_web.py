@@ -4,23 +4,34 @@ import os
 from flask import Flask, Response, jsonify
 from flask_cors import CORS
 
+# Hàm mã hóa ký tự đặc biệt trong mật khẩu thủ công an toàn tuyệt đối
+def custom_quote(text):
+    return text.replace('@', '%40').replace('#', '%23').replace('!', '%21')
+
 # Cấu hình timeout kết nối RTSP là 15 giây (15,000,000 micro giây)
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;timeout;15000000"
 
 app = Flask(__name__)
 CORS(app)
 
-# --- CẤU HÌNH CAMERA HIKVISION ---
-CAMERA_IP = "192.168.1.245"
-CAMERA_PORT = 1024
-RTSP_URL = f"rtsp://admin:MThuythinh2026%40@{CAMERA_IP}:{CAMERA_PORT}/Streaming/Channels/102"
+# --- CẤU HÌNH CAMERA HIKVISION TỪ XA ---
+LOCAL_CAMERA_IP = "113.161.131.27"
+CAMERA_PORT = 1024  # Khớp với Port NAT trên modem VNPT
+USERNAME = "admin"
+PASSWORD = "MThuythinh2026@"  
+
+# Mã hóa mật khẩu chứa ký tự đặc biệt (@)
+encoded_password = custom_quote(PASSWORD)
+
+# Tạo chuỗi RTSP chuẩn xác
+RTSP_URL = f"rtsp://{USERNAME}:{encoded_password}@{LOCAL_CAMERA_IP}:{CAMERA_PORT}/Streaming/Channels/102"
 
 # Vùng lấy mẫu ROI
 ROI_BOX = {
-    "y1": 180, 
+    "y1": 150,
     "y2": 280, 
-    "x1": 270, 
-    "x2": 370
+    "x1": 250, 
+    "x2": 390
 }
 
 latest_status_data = {
@@ -34,7 +45,6 @@ def generate_frames():
     global latest_status_data
     cap = cv2.VideoCapture(RTSP_URL, cv2.CAP_FFMPEG)
     
-    # Thiết lập timeout đọc khung hình trực tiếp từ OpenCV (15000 ms = 15 giây)
     cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 15000)
     cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 15000)
     
@@ -42,7 +52,7 @@ def generate_frames():
         success, frame = cap.read()
         if not success:
             cap.release()
-            # Thử kết nối lại sau khi mất kết nối quá 15 giây
+            # Tự động kết nối lại khi mất tín hiệu
             cap = cv2.VideoCapture(RTSP_URL, cv2.CAP_FFMPEG)
             cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 15000)
             cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 15000)
@@ -74,9 +84,9 @@ def generate_frames():
                 "turbidity": turbidity_val
             }
 
-            # Vẽ khung ROI lên video stream
+            # Vẽ khung ROI lên video stream và hiển thị lệch sang phải
             cv2.rectangle(frame, (ROI_BOX["x1"], ROI_BOX["y1"]), (ROI_BOX["x2"], ROI_BOX["y2"]), (0, 255, 255), 2)
-            cv2.putText(frame, f"Trang thai: {status}", (380, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color_alert, 2)
+            cv2.putText(frame, f"Trang thai: {status}", (700, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color_alert, 2)
 
         ret, buffer = cv2.imencode('.jpg', frame)
         frame_bytes = buffer.tobytes()
